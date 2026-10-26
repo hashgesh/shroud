@@ -1,0 +1,7 @@
+build*/
+*.shroud.cpp
+*.shroud.cc
+*.shroud.cxx
+*.map
+*.orig
+*.shroud.tmp
