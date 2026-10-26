@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-shroud is a source-level C++ obfuscator. It rewrites `.cpp` source (not compiler IR) so the same output builds under MSVC/GCC/Clang, then proves the plaintext is absent from the built binary. `README.md` is the design document and is kept current — read it before changing transform or verify behavior; the "Tested on real projects" and "Limits, honestly" sections record why specific edge cases are handled the way they are.
+shroud is a source-level C++ obfuscator. It rewrites `.cpp` source (not compiler IR) so the same output builds under MSVC/GCC/Clang, then proves the plaintext is absent from the built binary. `README.md` covers usage; `docs/DESIGN.md` is the design document and is kept current — read it before changing transform or verify behavior; its "Tested on real projects" and "Limits, honestly" sections record why specific edge cases are handled the way they are.
 
 ## Build & test
 
