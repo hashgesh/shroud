@@ -1,14 +1,19 @@
-<img src="assets/logo.svg" width="110" align="right" alt="shroud logo">
+<p align="center">
+  <img src="assets/logo.svg" width="110" alt="shroud logo">
+</p>
 
-# shroud
+<h1 align="center">shroud</h1>
 
-Source level obfuscator for C++20. Renames identifiers, encrypts string
-literals and duplicates statements behind opaque predicates, then proves the
-result is gone from the binary.
+<p align="center">Source level obfuscator for C++20.</p>
+
+Renames identifiers, encrypts string literals and duplicates statements behind
+opaque predicates, then proves the result is gone from the binary.
 
 It works on the source, not on the compiler's IR, so the same input builds with
 MSVC, GCC or Clang. That is the whole point: an LLVM pass only helps LLVM users,
 and MSVC projects are left out.
+
+## Example
 
 ```
 $ shroud obfuscate tests/sample/main.cpp --map build/shroud.map --seed 0x1234 -- -std=c++20
