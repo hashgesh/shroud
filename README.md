@@ -1,3 +1,5 @@
+<img src="assets/logo.svg" width="110" align="right" alt="shroud logo">
+
 # shroud
 
 Source level obfuscator for C++20. Renames identifiers, encrypts string

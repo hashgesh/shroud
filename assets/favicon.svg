@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- shortcut: drops the circuit traces and binary text from logo.svg, they vanish below ~64px -->
+  <rect width="48" height="48" rx="6" fill="#0a0514"/>
+  <rect x="7" y="7" width="34" height="34" rx="5" transform="rotate(45 24 24)"
+        stroke="#00f0ff" stroke-width="2.5" fill="none"/>
+  <rect x="17" y="17" width="14" height="14" rx="2" fill="#ff2bd6"/>
+</svg>
