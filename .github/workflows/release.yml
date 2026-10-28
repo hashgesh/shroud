@@ -57,16 +57,19 @@ jobs:
           prefix=$(brew --prefix "llvm@${LLVM_VERSION}")
           echo "LLVM_ROOT=${prefix}" >> "$GITHUB_ENV"
           echo "CXX=${prefix}/bin/clang++" >> "$GITHUB_ENV"
-          # brew's libclang/clang need an explicit SDK to find the system and
-          # libc++ headers; the smoke test passes these to obfuscate and to CXX.
+          # Pair this LLVM's libclang/clang with its *own* libc++ headers: the
+          # Xcode SDK's libc++ tracks the newest clang and an older libclang
+          # can't parse it. -isysroot still supplies the C runtime headers.
+          # The smoke test forwards these to both obfuscate and CXX.
           sdk=$(xcrun --show-sdk-path)
-          echo "SHROUD_OBF_FLAGS=-isysroot ${sdk} -stdlib=libc++" >> "$GITHUB_ENV"
+          echo "SHROUD_OBF_FLAGS=-isysroot ${sdk} -nostdinc++ -isystem ${prefix}/include/c++/v1 -stdlib=libc++" >> "$GITHUB_ENV"
 
       - name: Install LLVM ${{ env.LLVM_VERSION }} (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install llvm --version=18.1.8 -y --no-progress
+          # The runner image may ship a newer LLVM; --allow-downgrade pins ours.
+          choco install llvm --version=18.1.8 -y --no-progress --allow-downgrade
           "LLVM_ROOT=C:/Program Files/LLVM" | Out-File -FilePath $env:GITHUB_ENV -Append
           "C:/Program Files/LLVM/bin" | Out-File -FilePath $env:GITHUB_PATH -Append
           "CXX=clang++" | Out-File -FilePath $env:GITHUB_ENV -Append
