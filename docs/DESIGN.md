@@ -95,6 +95,27 @@ their meaning.
 the two copies; real control flow flattening needs an IR pass. This raises the
 cost of reading the disassembly, it does not make it unreadable.`
 
+## Packaging & the resource-dir
+
+libclang parses, but it cannot find its own builtin headers (`stddef.h`,
+`stdarg.h`, ...) without being told where they are via `-resource-dir`. Miss
+them and every translation unit that includes `<cstddef>` fails to parse, so
+the tool refuses to transform. The directory is not discoverable at runtime
+the way a loader finds a shared library, so it has to be located deliberately.
+
+A release ships those headers next to the binary and resolves them relative to
+the running executable: `obfuscate` reads its own path (`/proc/self/exe`,
+`_NSGetExecutablePath`, `GetModuleFileNameW`) and looks for
+`<exe>/../lib/clang/<ver>/include` before falling back to the absolute
+`SHROUD_RESOURCE_DIR` baked in at build time; an explicit `-resource-dir` after
+`--` always wins. The same relative story covers libclang itself: the install
+tree puts it in `lib/` and the binary's RPATH is `$ORIGIN/../lib`
+(`@loader_path/../lib` on macOS; beside the `.exe` on Windows). Both were
+absolute build-machine paths before, which is why a copied binary used to work
+only on the machine that built it. `tests/pkg-smoke.sh` is the regression
+guard: it relocates a package, strips LLVM from the environment, and proves the
+packaged libclang and headers are the ones actually used.
+
 ## Verification
 
 `shroud verify` scans the built binary byte by byte. No ELF/PE parser, no

@@ -30,9 +30,22 @@ target_link_libraries(shroud PRIVATE ${SHROUD_LIBCLANG})
 # The prebuilt LLVM tarballs are not on the default loader path, and libclang
 # only finds its builtin headers (stddef.h, ...) through -resource-dir.
 get_filename_component(SHROUD_LIBCLANG_DIR "${SHROUD_LIBCLANG}" DIRECTORY)
+# BUILD_RPATH points the build tree at the LLVM prefix so the tests run in
+# place. INSTALL_RPATH is relative instead, so an installed package finds the
+# bundled libclang in lib/ next to the binary on any machine (see install()
+# below). libclang's own RUNPATH is $ORIGIN/../lib, so a libLLVM bundled in the
+# same lib/ is found relative to libclang too. Windows has no RPATH: the DLL
+# sits beside the .exe in bin/.
+if(APPLE)
+    set(_shroud_install_rpath "@loader_path/../lib")
+elseif(UNIX)
+    set(_shroud_install_rpath "$ORIGIN/../lib")
+else()
+    set(_shroud_install_rpath "")
+endif()
 set_target_properties(shroud PROPERTIES
     BUILD_RPATH "${SHROUD_LIBCLANG_DIR}"
-    INSTALL_RPATH "${SHROUD_LIBCLANG_DIR}")
+    INSTALL_RPATH "${_shroud_install_rpath}")
 
 get_filename_component(_shroud_llvm_prefix "${SHROUD_LIBCLANG_INCLUDE}" DIRECTORY)
 file(GLOB _shroud_resource_dirs "${_shroud_llvm_prefix}/lib/clang/*")
@@ -40,6 +53,81 @@ if(_shroud_resource_dirs)
     list(SORT _shroud_resource_dirs)
     list(GET _shroud_resource_dirs -1 _shroud_resource_dir)
     target_compile_definitions(shroud PRIVATE SHROUD_RESOURCE_DIR="${_shroud_resource_dir}")
+endif()
+
+# ---------------------------------------------------------------- install
+# A relocatable package: `cmake --install build --prefix dist` produces a tree
+# that runs on another machine with no LLVM installed.
+#
+#   bin/shroud(.exe)
+#   lib/                        libclang (+ libLLVM it depends on)   [not Windows]
+#   lib/clang/<ver>/include/    clang builtin headers (-resource-dir)
+#   include/shroud/runtime.hpp  header injected into obfuscated output
+#   cmake/Shroud.cmake          downstream CMake glue
+#   README.md, LICENSE
+#
+# The two things that pinned a release to its build machine -- the libclang
+# RPATH and the baked resource-dir -- are both made relative above and here.
+
+install(TARGETS shroud RUNTIME DESTINATION bin)
+
+if(WIN32)
+    # On Windows find_library resolves the import lib; the loader needs the DLL
+    # beside the .exe. LLVM ships it in <prefix>/bin.
+    get_filename_component(_shroud_llvm_bin "${SHROUD_LIBCLANG_DIR}/../bin" ABSOLUTE)
+    find_file(SHROUD_LIBCLANG_DLL NAMES libclang.dll
+        HINTS "${SHROUD_LLVM_ROOT}/bin" "${_shroud_llvm_bin}")
+    if(NOT SHROUD_LIBCLANG_DLL)
+        message(WARNING "libclang.dll not found; the installed package will not be self-contained")
+    else()
+        install(PROGRAMS "${SHROUD_LIBCLANG_DLL}" DESTINATION bin)
+    endif()
+else()
+    # Bundle libclang and the libLLVM it depends on into lib/, resolving the
+    # soname/linker symlink chain so the name recorded in the binary's
+    # DT_NEEDED resolves there. Distro packages split libLLVM out of libclang;
+    # the official tarballs link it statically (nothing to glob). file(COPY)
+    # with FOLLOW_SYMLINK_CHAIN recreates each symlink next to the real object;
+    # install(FILES FOLLOW_SYMLINK_CHAIN) would do the same but needs CMake 3.22,
+    # above this project's floor. file() runs at install time, hence install(CODE).
+    set(_shroud_runtime_libs "${SHROUD_LIBCLANG}")
+    file(GLOB _shroud_libllvm
+        "${SHROUD_LIBCLANG_DIR}/libLLVM*.so*"
+        "${SHROUD_LIBCLANG_DIR}/libLLVM*.dylib")
+    list(APPEND _shroud_runtime_libs ${_shroud_libllvm})
+    install(CODE "
+        foreach(_lib ${_shroud_runtime_libs})
+            message(STATUS \"Bundling runtime library: \${_lib}\")
+            file(COPY \"\${_lib}\" DESTINATION \"\${CMAKE_INSTALL_PREFIX}/lib\"
+                 FOLLOW_SYMLINK_CHAIN)
+        endforeach()
+    ")
+endif()
+
+# Builtin headers -> lib/clang/<ver>/include, which the binary resolves via
+# <exe>/../lib/clang/<ver>/include at runtime (see src/obfuscate.cpp).
+if(_shroud_resource_dir AND EXISTS "${_shroud_resource_dir}/include")
+    get_filename_component(_shroud_resource_ver "${_shroud_resource_dir}" NAME)
+    install(DIRECTORY "${_shroud_resource_dir}/include"
+        DESTINATION "lib/clang/${_shroud_resource_ver}")
+else()
+    message(WARNING "clang resource-dir not found; the installed package will not be self-contained")
+endif()
+
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/include/shroud/runtime.hpp"
+    DESTINATION include/shroud)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Shroud.cmake" DESTINATION cmake)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md" DESTINATION .)
+foreach(_doc LICENSE LICENSE.txt LICENSE.md)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_doc}")
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_doc}" DESTINATION .)
+    endif()
+endforeach()
+
+# macOS records libclang's load path in the binary; rewrite it to @rpath so the
+# bundled copy under @loader_path/../lib is used instead of the build-time path.
+if(APPLE)
+    install(SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/cmake/InstallFixupMacOS.cmake")
 endif()
 
 enable_testing()
