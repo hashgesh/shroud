@@ -18,6 +18,14 @@
 #include <string_view>
 #include <vector>
 
+// Resolving the packaged resource-dir relative to the running binary needs the
+// executable's own path, which has no portable API.
+#if defined(_WIN32)
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
 namespace shroud {
 namespace {
 
@@ -1129,6 +1137,59 @@ void parseDiagnostics(CXTranslationUnit tu, unsigned& errors) {
     }
 }
 
+// Absolute path of the running executable, or an empty path if it can't be
+// determined. Used to find builtin headers shipped next to a release binary.
+fs::path executablePath() {
+#if defined(_WIN32)
+    std::wstring buf(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD n = GetModuleFileNameW(nullptr, buf.data(), static_cast<DWORD>(buf.size()));
+        if (n == 0) return {};
+        if (n < buf.size()) {
+            buf.resize(n);
+            return fs::path(buf);
+        }
+        buf.resize(buf.size() * 2); // path longer than the buffer: grow and retry
+    }
+#elif defined(__APPLE__)
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size); // first call reports the size it needs
+    std::string buf(size, '\0');
+    if (size == 0 || _NSGetExecutablePath(buf.data(), &size) != 0) return {};
+    buf.resize(std::strlen(buf.c_str()));
+    std::error_code ec;
+    const fs::path real = fs::canonical(buf, ec); // _NSGetExecutablePath may return a symlink/./..
+    return ec ? fs::path(buf) : real;
+#elif defined(__linux__)
+    std::error_code ec;
+    const fs::path real = fs::read_symlink("/proc/self/exe", ec);
+    return ec ? fs::path() : real;
+#else
+    return {};
+#endif
+}
+
+// Look for the clang builtin headers (stddef.h, ...) packaged next to the
+// binary, as the install layout ships them: <exe>/../lib/clang/<ver>/include.
+// Returns the directory to hand clang via -resource-dir (the one that *contains*
+// include/), or an empty path if nothing packaged is found. This keeps a release
+// working on a machine that has no LLVM at the build-time absolute path.
+fs::path packagedResourceDir() {
+    const fs::path exe = executablePath();
+    if (exe.empty()) return {};
+    std::error_code ec;
+    const fs::path clangRoot = exe.parent_path().parent_path() / "lib" / "clang";
+    if (!fs::is_directory(clangRoot, ec)) return {};
+    fs::path best;
+    for (fs::directory_iterator it(clangRoot, ec), end; !ec && it != end; it.increment(ec)) {
+        const fs::path cand = it->path();
+        if (!fs::exists(cand / "include" / "stddef.h", ec)) continue;
+        // Prefer the highest version if several clang resource dirs are shipped.
+        if (best.empty() || cand.filename().string() > best.filename().string()) best = cand;
+    }
+    return best;
+}
+
 } // namespace
 
 int obfuscate(const Options& opt) {
@@ -1167,13 +1228,22 @@ int obfuscate(const Options& opt) {
         if (a.rfind("-resource-dir", 0) == 0) hasResourceDir = true;
     }
     if (!hasStd) args.push_back("-std=c++20");
-#ifdef SHROUD_RESOURCE_DIR
+    // A user-supplied -resource-dir always wins. Otherwise prefer the builtin
+    // headers packaged next to this binary (so a release is relocatable), and
+    // only then fall back to the absolute path baked in at build time. The
+    // string must outlive the parse below, since args keeps its c_str().
     std::string resourceDir;
-    if (!hasResourceDir && std::filesystem::is_directory(SHROUD_RESOURCE_DIR)) {
-        resourceDir = std::string("-resource-dir=") + SHROUD_RESOURCE_DIR;
-        args.push_back(resourceDir.c_str());
-    }
+    if (!hasResourceDir) {
+        fs::path rd = packagedResourceDir();
+#ifdef SHROUD_RESOURCE_DIR
+        std::error_code ec;
+        if (rd.empty() && fs::is_directory(SHROUD_RESOURCE_DIR, ec)) rd = SHROUD_RESOURCE_DIR;
 #endif
+        if (!rd.empty()) {
+            resourceDir = "-resource-dir=" + rd.string();
+            args.push_back(resourceDir.c_str());
+        }
+    }
 
     CXIndex index = clang_createIndex(0, 0);
     CXTranslationUnit tu = nullptr;
