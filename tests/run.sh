@@ -12,11 +12,11 @@ src="$root/tests/sample/main.cpp"
 mkdir -p "$out"
 rm -f "$out"/*.cpp "$out"/*.txt "$out"/*.map "$out"/*.orig
 
-echo "[1/18] baseline build ($cxx)"
+echo "[1/19] baseline build ($cxx)"
 "$cxx" -std=c++20 -O1 "$src" -o "$out/app.orig"
 "$out/app.orig" > "$out/expected.txt"
 
-echo "[2/18] obfuscate"
+echo "[2/19] obfuscate"
 "$shroud" obfuscate "$src" --out "$out/main.shroud.cpp" --map "$out/shroud.map" --seed 0x1234
 
 # The include must follow the continued #define above it, not split it, and it
@@ -28,24 +28,24 @@ if [ -z "$inc" ] || [ "$inc" -ge "$grp" ]; then
     exit 1
 fi
 
-echo "[3/18] obfuscated build"
+echo "[3/19] obfuscated build"
 "$cxx" -std=c++20 -O1 -I"$root/include" "$out/main.shroud.cpp" -o "$out/app.obf"
 
-echo "[4/18] behaviour must be identical"
+echo "[4/19] behaviour must be identical"
 "$out/app.obf" > "$out/actual.txt"
 diff -u "$out/expected.txt" "$out/actual.txt"
 
-echo "[5/18] verifier must pass on the obfuscated binary"
+echo "[5/19] verifier must pass on the obfuscated binary"
 "$shroud" verify "$out/app.obf" --map "$out/shroud.map" --baseline "$out/app.orig"
 
-echo "[6/18] verifier must fail on the plain binary"
+echo "[6/19] verifier must fail on the plain binary"
 if "$shroud" verify "$out/app.orig" --map "$out/shroud.map" > "$out/negative.txt" 2>&1; then
     echo "FAIL: verifier accepted the unobfuscated binary"
     cat "$out/negative.txt"
     exit 1
 fi
 
-echo "[7/18] --functions must leave the rest of the file alone"
+echo "[7/19] --functions must leave the rest of the file alone"
 "$shroud" obfuscate "$src" --out "$out/scoped.cpp" --map "$out/scoped.map" --seed 0x1234 \
     --functions accumulate --no-strings --no-flow > /dev/null
 sed -n '/^int main/,$p' "$src" > "$out/main.before"
@@ -53,7 +53,7 @@ sed -n '/^int main/,$p' "$out/scoped.cpp" > "$out/main.after"
 diff -u "$out/main.before" "$out/main.after"
 grep -q 'shd_' "$out/scoped.cpp"
 
-echo "[8/18] --in-place must back up and refuse a second run"
+echo "[8/19] --in-place must back up and refuse a second run"
 cp "$src" "$out/inplace.cpp"
 "$shroud" obfuscate "$out/inplace.cpp" --in-place --map "$out/inplace.map" --seed 0x1234 > /dev/null
 cmp -s "$src" "$out/inplace.cpp.orig"
@@ -69,14 +69,14 @@ fi
 "$out/app.inplace" > "$out/inplace.txt"
 diff -u "$out/expected.txt" "$out/inplace.txt"
 
-echo "[9/18] the shared map must keep entries from earlier files"
+echo "[9/19] the shared map must keep entries from earlier files"
 "$shroud" obfuscate "$src" --out "$out/a.cpp" --map "$out/union.map" --seed 0x1234 --no-strings --no-flow > /dev/null
 "$shroud" obfuscate "$root/examples/rename.cpp" --out "$out/b.cpp" --map "$out/union.map" --seed 0x1234 \
     --no-strings --no-flow > /dev/null
 grep -q '# accumulate' "$out/union.map"
 grep -q '# bump' "$out/union.map"
 
-echo "[10/18] --functions must still encrypt strings inside the selected function"
+echo "[10/19] --functions must still encrypt strings inside the selected function"
 "$shroud" obfuscate "$src" --out "$out/scoped-strings.cpp" --map "$out/scoped-strings.map" --functions main \
     --no-rename --no-flow --seed 0x1234 > /dev/null
 grep -q 'shd::lit' "$out/scoped-strings.cpp"
@@ -88,14 +88,14 @@ fi
 "$out/app.scoped" > "$out/scoped.txt"
 diff -u "$out/expected.txt" "$out/scoped.txt"
 
-echo "[11/18] generated code must also build as C++11"
+echo "[11/19] generated code must also build as C++11"
 "$shroud" obfuscate "$root/tests/sample/cxx11.cpp" --out "$out/cxx11.cpp" --map "$out/cxx11.map" --seed 0x1234 \
     > /dev/null
 "$cxx" -std=c++11 -Wall -Wextra -pedantic -O1 -I"$root/include" "$out/cxx11.cpp" -o "$out/cxx11"
 "$out/cxx11" > "$out/cxx11.txt"
 echo "cxx11=5" | diff -u - "$out/cxx11.txt"
 
-echo "[12/18] switch bodies and user defined literals are encrypted, -O3 must not fold them"
+echo "[12/19] switch bodies and user defined literals are encrypted, -O3 must not fold them"
 cat > "$out/switch.cpp" <<'EOF'
 #include <cstdio>
 struct S { const char* p; unsigned long n; };
@@ -129,7 +129,7 @@ done
 "$cxx" -std=c++20 -O3 -I"$root/include" "$out/switch.obf.cpp" -o "$out/switch"
 printf 'alpha omega\ntail\nsuffix 6\n' | diff -u - <("$out/switch")
 
-echo "[13/18] a header declaration must not borrow the name of a local at the same offset"
+echo "[13/19] a header declaration must not borrow the name of a local at the same offset"
 cat > "$out/collide.cpp" <<'EOF'
 #include "collide.h"
 int api(int arg) { int spot = arg; return spot + 1; }
@@ -148,7 +148,7 @@ fi
 "$cxx" -std=c++20 -O1 -I"$out" -I"$root/include" "$out/collide.obf.cpp" -o "$out/collide"
 "$out/collide"
 
-echo "[14/18] an all-NUL literal cannot be proven leaked by zero padding"
+echo "[14/19] an all-NUL literal cannot be proven leaked by zero padding"
 cat > "$out/zero.cpp" <<'EOF'
 #include <cstdio>
 int main() { std::printf("%d\n", "\0\0\0\0\0\0"[5]); }
@@ -158,7 +158,7 @@ EOF
 "$out/zero" | diff -u - <(echo 0)
 "$shroud" verify "$out/zero" --map "$out/zero.map" > /dev/null
 
-echo "[15/18] lit returns the right string per call site; opaque() race-free under threads"
+echo "[15/19] lit returns the right string per call site; opaque() race-free under threads"
 cat > "$out/threads.cpp" <<'EOF'
 #include <cstdio>
 #include <string>
@@ -193,7 +193,7 @@ else
     echo "   (tsan unavailable, skipped the race check)"
 fi
 
-echo "[16/18] a literal nested in an InitListExpr/CXXNewExpr must not inherit a reference-typed ancestor's skip"
+echo "[16/19] a literal nested in an InitListExpr/CXXNewExpr must not inherit a reference-typed ancestor's skip"
 cat > "$out/refinit.cpp" <<'EOF'
 #include <cstdio>
 #include <set>
@@ -218,7 +218,7 @@ fi
 "$cxx" -std=c++20 -O1 -I"$root/include" "$out/refinit.obf.cpp" -o "$out/refinit"
 printf '1 0\n' | diff -u - <("$out/refinit")
 
-echo "[17/18] an overloaded free function used from inside another template must keep its name"
+echo "[17/19] an overloaded free function used from inside another template must keep its name"
 cat > "$out/overload.cpp" <<'EOF'
 #include <cstdio>
 namespace {
@@ -241,7 +241,7 @@ EOF
 "$cxx" -std=c++20 -O1 -I"$root/include" "$out/overload.obf.cpp" -o "$out/overload"
 printf '1 1\n' | diff -u - <("$out/overload")
 
-echo "[18/18] two literals at offsets whose delta cancels their byte delta must not share a keystream"
+echo "[18/19] two literals at offsets whose delta cancels their byte delta must not share a keystream"
 cat > "$out/collide2.cpp" <<'EOF'
 #include <cstdio>
 // "Ki" and "Gi" sit 12 bytes apart (the width of `"Mi", `) and their first
@@ -257,5 +257,25 @@ EOF
     > /dev/null
 "$cxx" -std=c++20 -O1 -I"$root/include" "$out/collide2.obf.cpp" -o "$out/collide2"
 printf 'Ki Gi\n' | diff -u - <("$out/collide2")
+
+echo "[19/19] cmake/Shroud.cmake: shroud_obfuscate_files must generate, build and run"
+cmakeproj="$out/cmakeproj"
+mkdir -p "$cmakeproj"
+cp "$src" "$cmakeproj/app.cpp"
+cat > "$cmakeproj/CMakeLists.txt" <<EOF
+cmake_minimum_required(VERSION 3.20)
+project(shroud_cmake_smoke CXX)
+set(CMAKE_CXX_STANDARD 20)
+include("$root/cmake/Shroud.cmake")
+shroud_obfuscate_files(OBF FILES app.cpp SEED 0x1234 ARGS -std=c++20)
+add_executable(app \${OBF})
+target_include_directories(app PRIVATE \${SHROUD_INCLUDE_DIR})
+EOF
+cmake -S "$cmakeproj" -B "$cmakeproj/build" -DCMAKE_BUILD_TYPE=Release \
+    -DSHROUD_EXECUTABLE="$shroud" -DCMAKE_CXX_COMPILER="$cxx" > /dev/null
+cmake --build "$cmakeproj/build" > /dev/null
+[ -f "$cmakeproj/app.shroud.cpp" ]
+grep -q 'shd_' "$cmakeproj/app.shroud.cpp"
+"$cmakeproj/build/app" | diff -u "$out/expected.txt" -
 
 echo "OK"
