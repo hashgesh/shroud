@@ -17,7 +17,9 @@ permissions:
   contents: write  # create the release and upload assets
 
 env:
-  # libclang's ABI is stable within a major version, so pin one major.
+  # Pinned libclang major for Linux and macOS (each package bundles its own
+  # libclang, so platforms need not match). Windows pins LLVM 20 in its own
+  # step to satisfy the runner's MSVC STL.
   LLVM_VERSION: '18'
 
 jobs:
@@ -64,12 +66,15 @@ jobs:
           sdk=$(xcrun --show-sdk-path)
           echo "SHROUD_OBF_FLAGS=-isysroot ${sdk} -nostdinc++ -isystem ${prefix}/include/c++/v1 -stdlib=libc++" >> "$GITHUB_ENV"
 
-      - name: Install LLVM ${{ env.LLVM_VERSION }} (Windows)
+      - name: Install LLVM (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # The runner image may ship a newer LLVM; --allow-downgrade pins ours.
-          choco install llvm --version=18.1.8 -y --no-progress --allow-downgrade
+          # Pin LLVM 20 here, not 18: the runner's MSVC STL requires Clang 20+
+          # (static_assert STL1000), so an older libclang cannot parse <type_traits>.
+          # Windows LLVM uses the MSVC STL, so there is no own-libc++ escape hatch
+          # as on macOS. --allow-downgrade pins regardless of the preinstalled patch.
+          choco install llvm --version=20.1.8 -y --no-progress --allow-downgrade
           "LLVM_ROOT=C:/Program Files/LLVM" | Out-File -FilePath $env:GITHUB_ENV -Append
           "C:/Program Files/LLVM/bin" | Out-File -FilePath $env:GITHUB_PATH -Append
           "CXX=clang++" | Out-File -FilePath $env:GITHUB_ENV -Append
