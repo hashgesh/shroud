@@ -21,6 +21,13 @@
 // Resolving the packaged resource-dir relative to the running binary needs the
 // executable's own path, which has no portable API.
 #if defined(_WIN32)
+// windows.h defines min()/max() macros that break std::min/std::max below.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
