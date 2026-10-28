@@ -94,6 +94,9 @@ else()
     file(GLOB _shroud_libllvm
         "${SHROUD_LIBCLANG_DIR}/libLLVM*.so*"
         "${SHROUD_LIBCLANG_DIR}/libLLVM*.dylib")
+    # libclang links the full libLLVM, not the C-API-only libLLVM-C; dropping it
+    # avoids shipping a second large dylib nothing loads (seen on Homebrew LLVM).
+    list(FILTER _shroud_libllvm EXCLUDE REGEX "libLLVM-C")
     list(APPEND _shroud_runtime_libs ${_shroud_libllvm})
     install(CODE "
         foreach(_lib ${_shroud_runtime_libs})

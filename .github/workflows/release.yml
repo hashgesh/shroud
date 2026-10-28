@@ -143,8 +143,9 @@ jobs:
           mkdir -p out
           if [ "${{ matrix.archive }}" = "zip" ]; then
             asset="${name}.zip"
-            # Windows ships bsdtar, which writes a standard zip from the suffix.
-            tar -C dist -a -cf "out/${asset}" "$name"
+            # 7-Zip (preinstalled on the runner) deflate-compresses the package;
+            # the bundled bsdtar writes a zip but stores it uncompressed.
+            ( cd dist && 7z a -tzip -mx=7 "../out/${asset}" "$name" >/dev/null )
           else
             asset="${name}.tar.gz"
             tar -C dist -czf "out/${asset}" "$name"
@@ -155,6 +156,7 @@ jobs:
             else shasum -a 256 "${asset}" > "${asset}.sha256"; fi )
           echo "== artifacts =="
           ls -l out
+          cat out/*.sha256
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
