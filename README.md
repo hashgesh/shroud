@@ -54,6 +54,23 @@ LLVM_ROOT=/opt/llvm cmake -S . -B build
 
 On Windows, `libclang.dll` has to sit next to `shroud.exe` (or on `PATH`).
 
+## Install from a release
+
+Each tagged release attaches a self-contained package per platform
+(`shroud-<tag>-<platform>.tar.gz` / `.zip`, with a `.sha256` beside it). It
+bundles libclang and the clang builtin headers, and the binary finds them
+relative to itself, so no LLVM install is needed on the target machine:
+
+```sh
+tar xzf shroud-v1.0.0-linux-x86_64.tar.gz
+./shroud-v1.0.0-linux-x86_64/bin/shroud obfuscate app.cpp -- -std=c++20
+```
+
+The layout is `bin/`, `lib/` (libclang), `lib/clang/<ver>/include/` (the
+builtin headers), `include/shroud/runtime.hpp`, and `cmake/Shroud.cmake`.
+`cmake --install build --prefix dist` produces the same tree from a source
+build. Pass `-resource-dir=...` after `--` to override the bundled headers.
+
 ## Usage
 
 ```
