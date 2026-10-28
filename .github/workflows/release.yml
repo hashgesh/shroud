@@ -1,0 +1,154 @@
+name: release
+
+# Build a relocatable shroud package on each native platform and attach it to
+# the GitHub release for the pushed tag. The package bundles libclang and the
+# clang resource-dir, and the binary finds them relative to itself (see
+# CMakeLists.txt install() and src/obfuscate.cpp), so it runs with no system
+# LLVM installed.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write  # create the release and upload assets
+
+env:
+  # libclang's ABI is stable within a major version, so pin one major.
+  LLVM_VERSION: '18'
+
+jobs:
+  package:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            archive: tar.gz
+          - os: macos-latest
+            platform: macos-arm64
+            archive: tar.gz
+          - os: windows-latest
+            platform: windows-x86_64
+            archive: zip
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM ${{ env.LLVM_VERSION }} (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y "libclang-${LLVM_VERSION}-dev" "llvm-${LLVM_VERSION}-dev"
+          echo "LLVM_ROOT=/usr/lib/llvm-${LLVM_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install LLVM ${{ env.LLVM_VERSION }} (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install "llvm@${LLVM_VERSION}"
+          prefix=$(brew --prefix "llvm@${LLVM_VERSION}")
+          echo "LLVM_ROOT=${prefix}" >> "$GITHUB_ENV"
+          echo "CXX=${prefix}/bin/clang++" >> "$GITHUB_ENV"
+          # brew's libclang/clang need an explicit SDK to find the system and
+          # libc++ headers; the smoke test passes these to obfuscate and to CXX.
+          sdk=$(xcrun --show-sdk-path)
+          echo "SHROUD_OBF_FLAGS=-isysroot ${sdk} -stdlib=libc++" >> "$GITHUB_ENV"
+
+      - name: Install LLVM ${{ env.LLVM_VERSION }} (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install llvm --version=18.1.8 -y --no-progress
+          "LLVM_ROOT=C:/Program Files/LLVM" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "C:/Program Files/LLVM/bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          "CXX=clang++" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+
+      - name: Install into a relocatable package tree
+        run: |
+          name="shroud-${GITHUB_REF_NAME}-${{ matrix.platform }}"
+          echo "PKG_NAME=${name}" >> "$GITHUB_ENV"
+          cmake --install build --config Release --prefix "dist/${name}"
+
+      - name: Verify libclang and the resource-dir are bundled
+        run: |
+          pkg="dist/${PKG_NAME}"
+          echo "== package tree =="
+          find "$pkg" -maxdepth 2 | sort
+          ls "$pkg"/lib/clang/*/include/stddef.h
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ls "$pkg"/bin/libclang.dll
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            ls "$pkg"/lib/libclang*.dylib
+          else
+            ls "$pkg"/lib/libclang*.so*
+          fi
+
+      - name: Smoke test the package (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: tests/pkg-smoke.sh "dist/${PKG_NAME}"
+
+      - name: Smoke test the package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Relocate the package so nothing depends on the build location, strip
+          # LLVM from PATH, and obfuscate -> build -> run with only the package's
+          # own libclang.dll (beside the .exe) and relative resource-dir.
+          $reloc = Join-Path $env:RUNNER_TEMP 'shroud-pkg'
+          Copy-Item -Recurse -Force "dist/$env:PKG_NAME" $reloc
+          $bin = Join-Path $reloc 'bin/shroud.exe'
+          $clangBin = 'C:\Program Files\LLVM\bin'
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -ne $clangBin }) -join ';'
+          $work = Join-Path $env:RUNNER_TEMP 'work'
+          New-Item -ItemType Directory -Force $work | Out-Null
+          Copy-Item tests/sample/main.cpp (Join-Path $work 'sample.cpp')
+          Push-Location $work
+          & $bin obfuscate sample.cpp --out sample.obf.cpp --map sample.map
+          if ($LASTEXITCODE -ne 0) { throw 'obfuscate failed' }
+          if (-not (Select-String -Path sample.obf.cpp -Pattern '#include <shroud/runtime.hpp>' -Quiet)) {
+            throw 'output missing runtime include'
+          }
+          & "$clangBin\clang++.exe" -std=c++20 -O1 -I"$reloc/include" sample.obf.cpp -o sample.exe
+          if ($LASTEXITCODE -ne 0) { throw 'obfuscated build failed' }
+          & .\sample.exe | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'obfuscated sample crashed' }
+          Pop-Location
+          Write-Host 'PASS: packaged shroud.exe is self-contained'
+
+      - name: Archive and checksum
+        run: |
+          name="$PKG_NAME"
+          mkdir -p out
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            asset="${name}.zip"
+            # Windows ships bsdtar, which writes a standard zip from the suffix.
+            tar -C dist -a -cf "out/${asset}" "$name"
+          else
+            asset="${name}.tar.gz"
+            tar -C dist -czf "out/${asset}" "$name"
+          fi
+          echo "ASSET=out/${asset}" >> "$GITHUB_ENV"
+          ( cd out && \
+            if command -v sha256sum >/dev/null; then sha256sum "${asset}" > "${asset}.sha256"; \
+            else shasum -a 256 "${asset}" > "${asset}.sha256"; fi )
+          echo "== artifacts =="
+          ls -l out
+
+      - name: Upload to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256
