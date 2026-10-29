@@ -16,7 +16,7 @@ libclang (any LLVM >= 16) is the only dependency, used only to parse. The tool n
 
 Two test binaries, both run by `ctest`:
 
-- `tests/run.sh` (ctest `smoke`) — 18 numbered end-to-end checks, each building and running real binaries, one regression step per bug found on a real project (see README). To iterate on one check, run the script against a built binary and read to the failing step:
+- `tests/run.sh` (ctest `smoke`) — 19 numbered end-to-end checks, each building and running real binaries, one regression step per bug found on a real project (see README). To iterate on one check, run the script against a built binary and read to the failing step:
 
   ```sh
   tests/run.sh build/shroud          # or: SHROUD=build/shroud tests/run.sh
@@ -30,7 +30,7 @@ Two test binaries, both run by `ctest`:
 
 Two subcommands dispatched in `src/main.cpp`; shared declarations in `src/shroud.hpp`.
 
-- **`obfuscate`** (`src/obfuscate.cpp`, ~1200 lines, the bulk of the project) walks the translation unit with libclang and applies three independent, individually-disableable transforms: identifier renaming, string-literal XOR encryption, and control-flow duplication behind opaque predicates. It emits an edit list over the original byte offsets and applies them, then writes a sibling `*.shroud.cpp` (or rewrites in place with a backup). It also appends to the **map** file.
+- **`obfuscate`** (`src/obfuscate.cpp`, ~1360 lines, the bulk of the project) walks the translation unit with libclang and applies three independent, individually-disableable transforms: identifier renaming, string-literal XOR encryption, and control-flow duplication behind opaque predicates. It emits an edit list over the original byte offsets and applies them, then writes a sibling `*.shroud.cpp` (or rewrites in place with a backup). It also appends to the **map** file.
 - **`verify`** (`src/verify.cpp`) scans the built binary byte-by-byte — no ELF/PE parser, so it is cross-platform — and checks every map entry is absent. It exits non-zero on a surviving literal or name, so it works as a CI gate.
 - **The map** (`src/mapfile.cpp`, `Map`/`MapEntry` in `shroud.hpp`) is the contract between the two commands: it records what each run changed so `verify` knows what must not appear. It **accumulates** across runs (never overwritten) because one linked binary covers many translation units.
 - **`include/shroud/runtime.hpp`** is header-only (`shd::lit`, `shd::opaque`, keystream) and is `#include`d into obfuscated output. It must stay valid C++11.
