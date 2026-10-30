@@ -65,6 +65,17 @@ case "$os" in
         echo "$deps" | grep -q 'not found' && { echo "$deps" | grep 'not found' >&2; fail "unresolved dependency"; }
         echo "$deps" | grep -E 'libclang' | grep -q "$pkg/" \
             || { echo "$deps" | grep -i clang >&2; fail "libclang did not resolve inside the package"; }
+        # A clean machine has no system libLLVM, and ldd above can be satisfied by
+        # one. So check by name: every libLLVM soname the bundled libclang needs
+        # must exist by that exact filename in lib/, or it won't resolve off-box.
+        for cl in "$pkg"/lib/libclang*.so*; do
+            [ -f "$cl" ] || continue
+            for need in $(readelf -d "$cl" | awk '/NEEDED/ && /libLLVM/ {gsub(/[][]/,"",$NF); print $NF}'); do
+                [ -e "$pkg/lib/$need" ] \
+                    || { ls -la "$pkg"/lib >&2; fail "libclang needs $need but no file of that name is in lib/ (soname mismatch)"; }
+                echo "   libLLVM dependency present in-package: $need"
+            done
+        done
         ;;
     *) echo "   (skipped on $os; step 4 exercises the real loader)" ;;
 esac
