@@ -105,6 +105,36 @@ else()
                  FOLLOW_SYMLINK_CHAIN)
         endforeach()
     ")
+    # The loader resolves DT_NEEDED by ELF SONAME, which can differ from the
+    # real file's name: apt.llvm.org ships libLLVM-18.so.1 whose SONAME is
+    # libLLVM-18.so.18.1, the name libclang records. file(COPY) only recreates
+    # pre-existing symlinks, so on a machine with no system LLVM that SONAME has
+    # no file. For each bundled real object, read its SONAME and add a
+    # <soname> -> <file> symlink when it is missing. (ELF only; macOS dylibs use
+    # install names, handled by InstallFixupMacOS.cmake.)
+    if(NOT APPLE)
+        install(CODE [=[
+            file(GLOB _objs "${CMAKE_INSTALL_PREFIX}/lib/libLLVM*.so*"
+                            "${CMAKE_INSTALL_PREFIX}/lib/libclang*.so*")
+            foreach(_obj IN LISTS _objs)
+                if(IS_SYMLINK "${_obj}")
+                    continue()
+                endif()
+                execute_process(
+                    COMMAND readelf -d "${_obj}"
+                    COMMAND awk "-F[][]" "/SONAME/ {print $2}"
+                    OUTPUT_VARIABLE _soname OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+                get_filename_component(_dir "${_obj}" DIRECTORY)
+                get_filename_component(_base "${_obj}" NAME)
+                if(_soname AND NOT _soname STREQUAL _base AND NOT EXISTS "${_dir}/${_soname}")
+                    message(STATUS "shroud: SONAME link ${_soname} -> ${_base}")
+                    execute_process(COMMAND "${CMAKE_COMMAND}" -E create_symlink
+                                    "${_base}" "${_dir}/${_soname}")
+                endif()
+            endforeach()
+        ]=])
+    endif()
 endif()
 
 # Builtin headers -> lib/clang/<ver>/include, which the binary resolves via
