@@ -93,7 +93,9 @@ jobs:
           cmake --build build --config Release
 
       - name: Test
-        run: ctest --test-dir build --config Release --output-on-failure
+        # ctest selects a multi-config build with -C, not --config (that is a
+        # cmake --build flag); -C is harmless on single-config Linux/macOS.
+        run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Install into a relocatable package tree
         run: |
