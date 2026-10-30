@@ -186,19 +186,13 @@ jobs:
           name: ${{ env.PKG_NAME }}
           path: out/*
 
-      - name: Upload to the release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ${{ env.ASSET }}
-            ${{ env.ASSET }}.sha256
-
-  # Fill the release body with the changelog for this tag, after the per-platform
-  # jobs have created the release and attached the assets. git-cliff runs only in
-  # this Linux job (it is a Docker action), so the matrix stays untouched.
-  release-notes:
-    name: release notes
+  # Publish once, from a single job, after every platform's package is built.
+  # The matrix jobs only upload workflow artifacts; having all three attach to
+  # the release concurrently raced and dropped assets (one job recreated the
+  # release and orphaned another's upload). This job gathers the artifacts and
+  # makes one action-gh-release call with the files and the git-cliff changelog.
+  release:
+    name: publish release
     needs: package
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
@@ -208,13 +202,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # git-cliff needs the full history and all tags
+      - name: Download all platform packages
+        uses: actions/download-artifact@v4
+        with:
+          path: dist  # each artifact lands in dist/<name>/ with its tar.gz|zip + .sha256
       - name: Generate release notes with git-cliff
         id: cliff
         uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
           args: --latest --strip header
-      - name: Set the release body
+      - name: Publish release with assets and notes
         uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.cliff.outputs.content }}
+          files: dist/**/*
