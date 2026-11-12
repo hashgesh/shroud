@@ -157,6 +157,10 @@ foreach(_doc LICENSE LICENSE.txt LICENSE.md)
     endif()
 endforeach()
 
+# libclang/libLLVM are bundled into the package; ship their license alongside ours.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/third_party/LLVM-LICENSE.TXT"
+    DESTINATION . RENAME LICENSE.LLVM.txt)
+
 # macOS records libclang's load path in the binary; rewrite it to @rpath so the
 # bundled copy under @loader_path/../lib is used instead of the build-time path.
 if(APPLE)
