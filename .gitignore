@@ -6,3 +6,6 @@ build*/
 *.orig
 *.shroud.tmp
 dist/
+
+# Claude Code local session notes
+.claude/
