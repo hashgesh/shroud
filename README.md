@@ -62,8 +62,8 @@ bundles libclang and the clang builtin headers, and the binary finds them
 relative to itself, so no LLVM install is needed on the target machine:
 
 ```sh
-tar xzf shroud-v1.0.0-linux-x86_64.tar.gz
-./shroud-v1.0.0-linux-x86_64/bin/shroud obfuscate app.cpp -- -std=c++20
+tar xzf shroud-v0.1.3-linux-x86_64.tar.gz
+./shroud-v0.1.3-linux-x86_64/bin/shroud obfuscate app.cpp -- -std=c++20
 ```
 
 The layout is `bin/`, `lib/` (libclang), `lib/clang/<ver>/include/` (the
